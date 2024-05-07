@@ -1,6 +1,7 @@
-import sys
+import sqlite3
 import re
 import socket
+import time
 
 class SmallShellServer:
     def __init__(self):
@@ -16,6 +17,19 @@ class SmallShellServer:
         }
         self.uncompleted_tasks = set()
         self.completed_tasks = set()
+        # use SQLite for an in-memory database
+        self.connection = sqlite3.connect(":memory:")
+        self.cursor = self.connection.cursor()
+
+        # Create tasks table with a unique name
+        # self.table_name = f"tasks_{int(time.time())}"
+        self.cursor.execute(f'''CREATE TABLE IF NOT EXISTS Tasks (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                task TEXT UNIQUE,
+                                status TEXT
+                            )''')
+        self.connection.commit()
+
 
     def start_server(self, host='127.0.0.1', port=12345):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -27,7 +41,6 @@ class SmallShellServer:
         while True:
             client_socket, client_address = server_socket.accept()
             print(f"Connected to client: {client_address}")
-
             self.handle_client(client_socket)
 
     def handle_client(self, client_socket):
@@ -71,13 +84,13 @@ class SmallShellServer:
             return result
         task_name = args[0]
         if task_name == 'completed' or task_name=='undo':
-            result = 'task name can not be completed or undo, please choose a different name'
-        elif task_name in self.uncompleted_tasks or task_name in self.completed_tasks:
-            result = f"There is already a task called \"{task_name}\", please choose a different name"
-        else:
-            self.uncompleted_tasks.add(task_name)
-            result = f"\"{task_name}\" added to list of tasks"
-        return result
+            return f'task name can not be completed or undo, please choose a different name'
+        try:
+            self.cursor.execute("INSERT INTO Tasks (task, status) VALUES (?,?)", (task_name, '-'))
+            self.connection.commit()
+            return f"\"{task_name}\" added to list of tasks"
+        except sqlite3.IntegrityError:
+            return f"There is already a task called \"{task_name}\", please choose a different name"
 
     def update_task(self, *args):
         if len(args)!=2:
@@ -86,17 +99,25 @@ class SmallShellServer:
             return result
         old_task_name = args[0]
         new_task_name = args[1]
-        if old_task_name not in self.uncompleted_tasks:
-            result = f"There is no uncompleted task called \"{old_task_name}\""
-        elif new_task_name in self.uncompleted_tasks or new_task_name in self.completed_tasks:
-            result = f"There is already a task called \"{new_task_name}\", please choose a different name"
-        elif new_task_name == 'completed' or new_task_name=='undo':
-            result = f'task name can not be completed or undo, please choose a different name'
+        if new_task_name == 'completed' or new_task_name=='undo':
+            return f'task name can not be completed or undo, please choose a different name'
+        self.cursor.execute("SELECT * FROM Tasks WHERE task=?", (old_task_name,))
+        existing_task = self.cursor.fetchone()
+
+        if existing_task:
+            # Check if the new task name already exists
+            self.cursor.execute("SELECT * FROM Tasks WHERE task=?", (new_task_name,))
+            existing_new_task = self.cursor.fetchone()
+
+            if existing_new_task:
+                return f"There is already a task called \"{new_task_name}\", please choose a different name"
+            else:
+                # Update the old task name to the new one
+                self.cursor.execute("UPDATE Tasks SET task=? WHERE task=?", (new_task_name, old_task_name))
+                self.connection.commit()
+                return f"\"{old_task_name}\" updated to \"{new_task_name}\""
         else:
-            self.uncompleted_tasks.remove(old_task_name)
-            self.uncompleted_tasks.add(new_task_name)
-            result = f"\"{old_task_name}\" updated to \"{new_task_name}\""
-        return result
+            return f"There is no uncompleted task called \"{old_task_name}\""
 
     def complete_task(self, *args):
         if len(args)!=1:
@@ -104,15 +125,22 @@ class SmallShellServer:
             result+= f'the correct format is: todo complete-task \"task name\"'
             return result
         task_name = args[0]
-        if task_name in self.completed_tasks:
-            result=f"\"{task_name}\" is already completed"
-        elif task_name not in self.uncompleted_tasks:
-            result = f"there is no uncompleted task called \"{task_name}\""
+        #check if the task exits and is completed
+        self.cursor.execute("SELECT * FROM Tasks WHERE task=? AND status=?", (task_name, '+'))
+        existing_task = self.cursor.fetchone()
+        if existing_task:
+            return f"\"{task_name}\" is already completed"
+        # Check if the task exists and is uncompleted
+        self.cursor.execute("SELECT * FROM Tasks WHERE task=? AND status=?", (task_name, '-'))
+        existing_task = self.cursor.fetchone()
+
+        if existing_task:
+            # Update the status of the task
+            self.cursor.execute("UPDATE Tasks SET status=? WHERE task=?", ('+', task_name))
+            self.connection.commit()
+            return f"\"{task_name}\" completed"
         else:
-            self.uncompleted_tasks.remove(task_name)
-            self.completed_tasks.add(task_name)
-            result = f"\"{task_name}\" completed"
-        return result
+            return f"there is no uncompleted task called \"{task_name}\""
 
     def undo_task(self, *args):
         if len(args)!=1:
@@ -120,45 +148,59 @@ class SmallShellServer:
             result+= f'the correct format is: todo undo-task \"task name\"'
             return result
         task_name = args[0]
-        if task_name in self.uncompleted_tasks:
-            result = f"\"{task_name}\" is not yet completed"
-        elif task_name not in self.completed_tasks:
-            result = f"there is no task called: \"{task_name}\""
+        # Check if the task exists and is uncompleted
+        self.cursor.execute("SELECT * FROM Tasks WHERE task=? AND status=?", (task_name, '-'))
+        existing_task = self.cursor.fetchone()
+        if existing_task:
+            return f"\"{task_name}\" is not yet completed"
+        # Check if the task exists and is completed
+        self.cursor.execute("SELECT * FROM Tasks WHERE task=? AND status=?", (task_name, '+'))
+        existing_task = self.cursor.fetchone()
+        
+        if existing_task:
+            # Update the status of the task
+            self.cursor.execute("UPDATE Tasks SET status=? WHERE task=?", ('-', task_name))
+            self.connection.commit()
+            return f"\"{task_name}\" moved to uncompleted tasks"
         else:
-            self.completed_tasks.remove(task_name)
-            self.uncompleted_tasks.add(task_name)
-            result = f"\"{task_name}\" moved to uncompleted tasks"
-        return result
-
+            return f"there is no task called: \"{task_name}\""
+        
     def delete_task(self, *args):
         if len(args)!=1:
             result = f'you did not enter the command as expected\n'
             result+= f'the correct format is: todo delete-task \"task name\"'
             return result
         task_name = args[0]
-        if task_name in self.uncompleted_tasks:
-            self.uncompleted_tasks.remove(task_name)
-            result = f'\"{task_name}\" removed from tasks list'
-        elif task_name in self.completed_tasks:
-            self.completed_tasks.remove(task_name)
-            result = f'\"{task_name}\" removed from tasks list'
+        # Check if the task exists
+        self.cursor.execute("SELECT * FROM Tasks WHERE task=?", (task_name,))
+        existing_task = self.cursor.fetchone()
+
+        if existing_task:
+            # Delete the task from the Tasks table
+            self.cursor.execute("DELETE FROM Tasks WHERE task=?", (task_name,))
+            self.connection.commit()
+            return f'\"{task_name}\" removed from tasks list'
         else:
-            result = f"there is no task: \"{task_name}\""
-        return result
-    
+            return f"ERROR there is no task: \"{task_name}\""
+
     def list_tasks(self, *args):
         if len(args)!=0:
             result = f'you did not enter the command as expected'
             result+= f'the correct format is: todo list-tasks'
             return result
-        if len(self.completed_tasks)==0 and len(self.uncompleted_tasks)==0:
-            result = f'there are no tasks'
-        else:
-            result = "{:<30} {:<10}\n".format("Name", "Completed")
-            for task in self.completed_tasks:
-                result+="{:<30} {:<10}\n".format(task, "+")
-            for task in self.uncompleted_tasks:
-                result+="{:<30} {:<10}\n".format(task, "-")
+        # Fetch all tasks from the database
+        self.cursor.execute("SELECT task, status FROM Tasks")
+        tasks = self.cursor.fetchall()
+        if not tasks:
+            return f'there are no tasks'
+        
+        result = "{:<30} {:<10}\n".format("Name", "Completed")
+        for task, status in tasks:
+            if status == '+':
+                result += "{:<30} {:<10}\n".format(task, "+")
+            elif status == '-':
+                result += "{:<30} {:<10}\n".format(task, "-")
+
         return result
         
     def list_completed_tasks(self, *args):
@@ -166,13 +208,20 @@ class SmallShellServer:
             result = f'you did not enter the command as expected'
             result+= f'the correct format is: todo list-tasks'
             return result
-        if len(self.completed_tasks)==0:
-            result = f'there are no completed tasks'
-        else:
-            result = "{:<30} {:<10}\n".format("Name", "Completed")
-            for task in self.completed_tasks:
-                result+="{:<30} {:<10}\n".format(task, "+")
+        self.cursor.execute("SELECT task, status FROM Tasks")
+        tasks = self.cursor.fetchall()
+        if not tasks:
+            return f'there are no tasks'
+        completed = False
+        result = "{:<30} {:<10}\n".format("Name", "Completed")
+        for task, status in tasks:
+            if status == '+':
+                result += "{:<30} {:<10}\n".format(task, "+")
+                completed = True
+        if not completed:
+            return f'there are no completed tasks'
         return result
+
 
     def say_hello(self):
         return "Hello, I am a small server"

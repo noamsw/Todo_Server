@@ -240,7 +240,7 @@ class TestSmallShellServer(unittest.TestCase):
             client_socket.connect(("127.0.0.1", 12345))
             client_socket.sendall("todo delete-task \"giberish\"".encode())
             response = client_socket.recv(1024).decode()
-            expected_response = f"there is no task: \"giberish\""
+            expected_response = f"ERROR there is no task: \"giberish\""
             self.assertEqual(response.strip(), expected_response)
 
     #delete an uncompleted task
