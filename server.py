@@ -105,7 +105,7 @@ class SmallShellServer:
             return result
         task_name = args[0]
         if task_name in self.completed_tasks:
-            result=f"{task_name} is already completed"
+            result=f"\"{task_name}\" is already completed"
         elif task_name not in self.uncompleted_tasks:
             result = f"there is no uncompleted task called \"{task_name}\""
         else:
@@ -121,7 +121,7 @@ class SmallShellServer:
             return result
         task_name = args[0]
         if task_name in self.uncompleted_tasks:
-            result = f"{task_name} is not yet completed"
+            result = f"\"{task_name}\" is not yet completed"
         elif task_name not in self.completed_tasks:
             result = f"there is no task called: \"{task_name}\""
         else:
@@ -175,7 +175,7 @@ class SmallShellServer:
         return result
 
     def say_hello(self):
-        return "Hello, I am a small shell"
+        return "Hello, I am a small server"
 
 if __name__ == "__main__":
     smallshell_server = SmallShellServer()
