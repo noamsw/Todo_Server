@@ -1,7 +1,6 @@
 import sqlite3
 import re
 import socket
-import time
 
 class SmallShellServer:
     def __init__(self):
@@ -15,8 +14,6 @@ class SmallShellServer:
             "todo list-tasks": self.list_tasks,
             "todo list-completed-tasks": self.list_completed_tasks,
         }
-        self.uncompleted_tasks = set()
-        self.completed_tasks = set()
         # use SQLite for an in-memory database
         self.connection = sqlite3.connect(":memory:")
         self.cursor = self.connection.cursor()
@@ -29,7 +26,16 @@ class SmallShellServer:
                                 status TEXT
                             )''')
         self.connection.commit()
+        # Set up signal handler to catch termination signals
+                      
 
+    def close_server(self):
+        self.cursor.close()
+        self.connection.close()
+
+    #release resources when done
+    def __del__(self):
+        self.close_server()
 
     def start_server(self, host='127.0.0.1', port=12345):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -57,6 +63,7 @@ class SmallShellServer:
         print("Closing connection")
         client_socket.close()
 
+    # parse the command given into the command and arguments
     def parse_command(self, command):
         pattern = r'^\s*(\S+)\s+(\S+)\s*(?:"([^"]*)")?\s*(?:"([^"]*)")?(.*)$'
         match = re.match(pattern, command)
@@ -70,6 +77,7 @@ class SmallShellServer:
         optional_args = [arg for arg in (arg1, arg2) if arg is not None]
         return small_command, optional_args
 
+    #check if the command is recognized and run it if so
     def execute_command(self, command, args, client_socket):
         if command in self.commands:
             result = self.commands[command](*args)
@@ -77,6 +85,7 @@ class SmallShellServer:
         else:
             client_socket.sendall("Command not found".encode())
 
+    # add a task to the list of tasks
     def add_task(self, *args):
         if len(args)!=1:
             result = 'you did not enter the command as expected\n'
@@ -92,6 +101,8 @@ class SmallShellServer:
         except sqlite3.IntegrityError:
             return f"There is already a task called \"{task_name}\", please choose a different name"
 
+    #change the name of an existing task to a new name
+    #the new name must not be the name of another existing task
     def update_task(self, *args):
         if len(args)!=2:
             result = f'you did not enter the command as expected\n'
@@ -119,6 +130,7 @@ class SmallShellServer:
         else:
             return f"There is no uncompleted task called \"{old_task_name}\""
 
+    #move an existing task from the uncompleted task to completed
     def complete_task(self, *args):
         if len(args)!=1:
             result = f'you did not enter the command as expected\n'
@@ -142,6 +154,7 @@ class SmallShellServer:
         else:
             return f"there is no uncompleted task called \"{task_name}\""
 
+    #move a completed task to uncomplete
     def undo_task(self, *args):
         if len(args)!=1:
             result = f'you did not enter the command as expected\n'
@@ -164,7 +177,9 @@ class SmallShellServer:
             return f"\"{task_name}\" moved to uncompleted tasks"
         else:
             return f"there is no task called: \"{task_name}\""
-        
+    
+    #remove a task from the list
+    #completed or not
     def delete_task(self, *args):
         if len(args)!=1:
             result = f'you did not enter the command as expected\n'
@@ -183,6 +198,7 @@ class SmallShellServer:
         else:
             return f"ERROR there is no task: \"{task_name}\""
 
+    #list the tasks in the DB, both completed and uncompleted
     def list_tasks(self, *args):
         if len(args)!=0:
             result = f'you did not enter the command as expected'
@@ -202,7 +218,8 @@ class SmallShellServer:
                 result += "{:<30} {:<10}\n".format(task, "-")
 
         return result
-        
+    
+    #list the completed tasks in the DB
     def list_completed_tasks(self, *args):
         if len(args)!=0:
             result = f'you did not enter the command as expected'
@@ -222,7 +239,7 @@ class SmallShellServer:
             return f'there are no completed tasks'
         return result
 
-
+    #a little hello
     def say_hello(self):
         return "Hello, I am a small server"
 
