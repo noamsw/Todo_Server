@@ -116,6 +116,10 @@ class SmallShellServer:
         existing_task = self.cursor.fetchone()
 
         if existing_task:
+            #check if the task is already completed
+            task_status = existing_task[2]  # Status is at index 2 in the row
+            if task_status == '+':
+                return f"Task \"{old_task_name}\" is completed and cannot be updated"
             # Check if the new task name already exists
             self.cursor.execute("SELECT * FROM Tasks WHERE task=?", (new_task_name,))
             existing_new_task = self.cursor.fetchone()

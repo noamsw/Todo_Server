@@ -101,6 +101,23 @@ class TestSmallShellServer(unittest.TestCase):
             response = client_socket.recv(1024).decode()
             expected_response = f'\"Updated Task\" removed from tasks list'
             self.assertEqual(response.strip(), expected_response)
+
+    #add a completed task called
+    def test_update_completed_task(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
+            client_socket.connect(("127.0.0.1", 12345))
+            client_socket.sendall("todo add-task \"Task 2\"".encode())
+            client_socket.recv(1024)  # Clear buffer
+            client_socket.sendall("todo complete-task \"Task 2\"".encode())
+            client_socket.recv(1024)  # Clear buffer
+            client_socket.sendall("todo update-task \"Task 2\" \"Updated Task\"".encode())
+            response = client_socket.recv(1024).decode()
+            expected_response = f"Task \"Task 2\" is completed and cannot be updated"
+            self.assertEqual(response.strip(), expected_response)
+            client_socket.sendall("todo delete-task \"Task 2\"".encode())
+            response = client_socket.recv(1024).decode()
+            expected_response = f'\"Task 2\" removed from tasks list'
+            self.assertEqual(response.strip(), expected_response)
     
     #update a non existent Task
     def test_update_non_existent_task(self):
