@@ -216,8 +216,7 @@ class SmallShellServer:
                 result += "{:<30} {:<10}\n".format(task, "+")
             elif status == '-':
                 result += "{:<30} {:<10}\n".format(task, "-")
-
-        return result
+        return result.rstrip('\n')
     
     #list the completed tasks in the DB
     def list_completed_tasks(self, *args):
@@ -237,7 +236,7 @@ class SmallShellServer:
                 completed = True
         if not completed:
             return f'there are no completed tasks'
-        return result
+        return result.rstrip('\n')
 
     #a little hello
     def say_hello(self):
